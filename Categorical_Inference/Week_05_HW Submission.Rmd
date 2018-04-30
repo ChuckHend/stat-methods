@@ -1,0 +1,342 @@
+---
+title: 'Inference for Categorical Data'
+author: "Adam Hendel"
+date: "02/27/2018"
+output: word_document
+fontsize: 12pt
+---
+
+Create a Word document from this R Markdown file for the following exercises.  Submit the R markdown file and resulting Word document via D2L Dropbox.    
+
+## Exercise 1
+
+Suppose independent, random samples of account holders for credit unions and banks had the following frequencies for being rated as Outstanding.
+
+| | Outstanding | Not Outstanding | 
+| --- | :---: | :---: | :---: |
+| Bank | 70 | 150 | 
+| Credit Union | 66 | 81 | 
+
+### Part 1a
+
+Create the table in R from the data and display it with the margins. Include the names for the rows and columns.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# display table with margins for part 1a
+marginTable <- matrix(c(70,150,66,81), byrow = F, nrow=2)
+rownames(marginTable) <- c('Bank','Credit Union')
+colnames(marginTable) <- c('Outstanding','Not Outstanding')
+addmargins(marginTable)
+
+# data frame is my preferred object for analysis
+# convert marginTable to a dataframe for use in certain questions
+myTable <- data.frame(addmargins(marginTable, margin = 2))
+myTable
+```
+
+### Part 1b
+
+For the population of all credit unions, construct and interpret a 95% confidence interval for the proportion of credit unions rated as Outstanding.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# proportion of credit unions ([2]) to entire population of all credit unions
+results.1b <- prop.test(myTable$Outstanding[2],myTable$Sum[2],correct=FALSE,conf.level = 0.95)
+results.1b
+
+```
+
+The proportion of credit unions rated as outstanding is, with 95% confidence, between `r paste(round(results.1b$conf[1],3)*100,'%',sep='')` and `r paste(round(results.1b$conf[2],3)*100,'%',sep='')`.
+
+### Part 1c  
+
+Compare the proportions of credit unions that are rated as Outstanding to the proportion of banks that are rated as Outstanding.  Do this by computing a 95% CI for difference in proportions of those rated as Outstanding for credit unions minus banks.  Interpret the result.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# report credit unions minus banks, so need to flip order of the input data
+revMyTable <- myTable[rev(rownames(myTable)),]
+results.2b <- prop.test(revMyTable$Outstanding, revMyTable$Sum, correct = F)
+results.2b
+
+```
+
+With 95% confidence, between `r paste(round(results.2b$conf[1],3)*100,'%',sep='')` and `r paste(round(results.2b$conf[2],3)*100,'%',sep='')` more `r paste(rownames(revMyTable)[1],'s',sep='')` are rated as Outstanding.
+
+### Part 1d
+
+If one bank is selected randomly, what is the estimated risk of not being rated as Outstanding? (“risk” means probability)
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1d -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# proportion of Not Outstanding Banks to total banks (outstand and not outstanding)
+library(mosaic,quietly = T, warn.conflicts = F)
+oddsRatio(marginTable[c('Credit Union','Bank'),c('Not Outstanding','Outstanding')], verbose=T)
+```
+
+0.4853 risk of a Bank not being rated as outstanding.
+
+### Part 1e 
+
+If one credit union is selected randomly, what is the estimated risk of not being rated as Outstanding?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1e -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+oddsRatio(marginTable[,c('Not Outstanding','Outstanding')], verbose=T)
+```
+
+0.3506 risk of a Credit Union not being rated as outstanding.
+
+### Part 1f
+
+Compute the relative risk of not being rated as Outstanding for banks compared to credit unions.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1f -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+oddsRatio(marginTable[c('Credit Union','Bank'),c('Not Outstanding','Outstanding')],verbose=T)
+
+```
+
+The relative risk of not being rated Outstanding is 1.384 times higher in Banks than in Credit Unions.
+
+### Part 1g
+    
+What are the estimated odds of a credit union being rated as Outstanding? 
+    
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1g -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+oddsRatio(marginTable, verbose = T)
+```
+
+The estimated odds of a Credit Union being rated outstanding is 1.852.
+
+### Part 1h
+
+What are the estimated odds of a bank being rated as Outstanding?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1h -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+oddsRatio(marginTable[c('Credit Union','Bank'),], verbose = T)
+
+```
+
+The estimated odds of a Bank being rated Outstanding is 1.061.
+
+### Part 1i
+
+Compute the estimated odds ratio of being rated as Outstanding for credit unions compared to banks.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1i -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# Credit Unions are of interest, so leave them in row two of the table
+oddsRatio(marginTable,verbose=T)
+```
+
+The odds ratio is `r round(oddsRatio(marginTable),3)` for `r paste(rownames(marginTable)[2],'s',sep='')` compared to `r paste(rownames(marginTable)[1],'s',sep='')`
+
+### Part 1j
+
+Write an interpretation of the odds ratio of being rated as Outstanding for credit unions compared to banks as a percent.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1j -|-|-|-|-|-|-|-|-|-|-|-
+
+The odds of an Oustanding rating for Credit Unions are 74.6% higher than the odds of an Outstanding rating for Banks.
+
+### Part 1k
+
+Construct a 95% confidence interval for the population odds ratio of being rated as Outstanding for credit unions compared to banks.  Interpret the interval, leaving the endpoints as a multiples.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1k -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+oddsRatio(marginTable,verbose=T,conf.level = 0.95)
+
+```
+
+95 percent confidence interval: 1.134 < OR < 2.688
+
+With 95% confidence, the odds of an Outstanding rating for Credit Unions are 1.134 to 2.688 times higher than Banks.
+
+### Part 1l
+
+Based on the 95% CI for the odds ratio, is there significant evidence of an association between being rated as Outstanding and whether or not an institution is a bank or credit union?  Explain.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1l -|-|-|-|-|-|-|-|-|-|-|-
+
+With 95% confidence, we can say there is evidence to say that credit unions have a higher probability of being rated as Outstanding. This would not be the case if the 95% CI spanned over zero.
+
+## Exercise 2
+
+Marketing Research reported results of a study of online purchases where demographic information was collected on customers.  The age group of the customer (under 18, 18 to 35, 36 to 50, or over 50) purchased by each of 165 consumers was recorded.     
+
+### Part 2a
+
+A leading internet market research company claims that 13% of all online purchases are made by customers under 18, 32% by customers between 18 and 35, 38% by customers between 36 and 50, and the remaining 17% by customers over 50 years of age.
+
+Test this claim if sample data shows that 28 customers in the sample were under 18, 44 were 18 to 35, 54 were 36 to 50, and 39 were over 50.
+
+| Age Group | Under 18 | 18 to 35 | 36 to 50 | Over 50
+| --- | :---: | :---: | :---: | :---: 
+| Count | 28 | 44 | 54 | 39 
+
+
+Use $\alpha = 0.05$.  State the hypotheses for the test and use R to compute the test statistic, df, and P-value. State the conclusion, including a practical interpretation in the context of the problem.  Include the P-value in the conclusion.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2a -|-|-|-|-|-|-|-|-|-|-|-
+
+$H_0$: $\pi_\mbox{<18}$=.13, $\pi_\mbox{18 to 35}$=.32, $\pi_\mbox{36 to 50}$=.38, $\pi_\mbox{>50}$=.17
+
+$H_a$: At least one $\pi_\mbox{i}$ differs from its hypothesized value.
+
+```{r}
+observed <- c(28,44,54,39)
+proportions <- c(.13, .32, .38, .17)
+
+chisq.test(x=observed, p=proportions)
+
+```
+
+X-squared = 8.9486, df = 3, p-value = 0.02998
+
+Reject the null hypothesis at $\alpha = 0.05$, P=0.02998.
+
+There is sufficient evidence to conclude that at least one observed customer proportion differs from the proportions reported by the research company.
+
+### Part 2b  
+
+Compute the expected cell counts and verify that they are all large enough for the chi-square test to be valid. Include a reference to the criterion you are using to determine if expected cell counts are large enough.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# the expected cell counts
+expected <- sum(observed)*proportions
+expected
+# which cell counts are at least 5
+sum(observed)*proportions >= 5
+
+```
+
+The Chi-Square Test for Goodness-of-Fit requires that the samples are selected randomly and that the sample is large enough so that the expected cell frequencies are all at least 5. The output above confirms that all cell frequences are greater than 5.
+
+### Part 2c
+
+Display the data in a bar graph and comment on its features.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+library(ggplot2,quietly = T, warn.conflicts = F)
+d <- data.frame(values=c(observed,expected),
+                category=c(rep('observed',length(observed)),rep('expected',length(expected))),
+                group = rep(c('<18', '18-35','36-50','>50'),2))
+ggplot(d, aes(x=group,y=values,fill=category))+
+  geom_bar(stat='identity',position = 'dodge') +
+  scale_x_discrete(limits=c('<18', '18-35','36-50','>50')) +
+  scale_fill_brewer(palette = 'Set1')
+
+```
+
+By visual inspection, we notice that the observed frequencies are higher in the under 18 and over 50 groups, but lower in the 18-35 and 35-50 groups. 
+
+## Exercise 3
+
+A researcher is studying seat belt wearing behavior in teenagers (ages 13 to 19) and senior citizens (over 65). A random sample of 19 teens is taken, of which 17 report always wearing a seat belt.  In random sample of 20 senior citizens, 12 report always wearing a seat belt.  Using a 5% significance level, determine if seat belt use is associated with these two age groups.
+
+### Part 3a
+
+Create a 2x2 matrix with the correct cell counts.  Arrange it so that the columns represent the age group (teen vs senior) and rows contain the seat belt usage (always wear vs not always wear).  
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 3a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+
+seat.belts <- matrix(c(17,2,12,8),byrow = F, nrow=2)
+colnames(seat.belts) <- c('teens','seniors')
+rownames(seat.belts) <- c('always','not always')
+addmargins(seat.belts)
+```
+
+### Part 3b
+
+With the small cell counts in mind, use the appropriate test to determine if proportions of those who claim to "always wear" a seat belt is the same for these two age groups.  Use a 5% significance level.  Include all parts for the hypothesis test.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 3b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# user Fisher Exact test since we have cell counts under 5
+fisher.test(seat.belts)
+```
+
+$H_0$: $\pi_\mbox{teens}$ = $\pi_\mbox{seniors}$
+
+$H_a$: $\pi_\mbox{teens}$ $\neq$ $\pi_\mbox{seniors}$
+
+Do not reject $H_0$ at $\alpha = 0.05$, P=0.06483
+
+There is not sufficient evidence to conclude that the proportions of those who claim to "always wear" their seat belt is different in the teen population than the senior population.
+
+## Exercise 4
+
+A study was conducted whereby the type of anesthetic (A or B), nausea after the surgery (Yes or No), the amount of pain medication taken during the recovery period, and age for a random sample of 72 patients undergoing reconstructive knee surgery. 
+
+The data frame is the anesthesia in the DS705data package. 
+
+---
+
+### Part 4a
+
+Create and display a contingency table with the type of anesthetic defining the rows and nausea after the surgery as the columns.  Display the margins for this table as well.
+
+Also make a side-by-side bar graph showing the nausea (Yes vs No) on the horizontal axis and color-coded bars to indicate the type of anesthetic.  
+
+Comment on any potential relationships between nausea and type of anesthetic you see in the graph.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+library(DS705data)
+data("anesthesia")
+str(anesthesia)
+observed <- table(anesthesia$anesthetic, anesthesia$nausea)
+addmargins(observed)
+
+ggplot(anesthesia, aes(x=nausea, fill=anesthetic)) +
+  geom_bar(stat='count', position='dodge') +
+  scale_fill_brewer(palette = 'Set1')
+
+```
+
+Anesthetic A appears to result in a higher number of patients reporting nausea after surgery than patients under anesthetic B. 
+
+---
+
+### Part 4b
+
+Conduct a chi-square test for independence at the 10% level.
+
+State the hypotheses (in words) and conclusion of the test. Use R to compute the test statistic, degrees of freedom, and P-value. Include the P-value in your written conclusion.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 4b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+chisq.test(observed)
+```
+
+$H_0$: Anesthetic type and post surgery nausea are independent.
+
+$H_a$: Anesthetic type and post surgery nausea are associated.
+
+Reject $H_0$ at $\alpha = 0.10$, P=0.004535
+
+There is sufficient evidence in this sample to conclude that the anesthetic type is associated with post surgery nausea (P=0.004535).

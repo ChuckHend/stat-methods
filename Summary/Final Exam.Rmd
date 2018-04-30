@@ -1,0 +1,331 @@
+
+---
+title: "Final Exam"
+author: "Adam Hendel"
+output:
+  word_document: default
+  pdf_document: default
+fontsize: 12pt
+---
+
+Unlike the Homework RMD files, this one doesn't contain all of the questions.  Rather we want you to read the questions on D2L and use this RMD file to record your R code that you used to answer each question.  This file must knit correctly.  After you submit the D2L quiz, then upload this RMD file and the knitted version of this file to the Final Exam dropbox on D2L.
+
+## Questions 1-16
+
+You do not need to submit any work with these questions.  Just answer them in D2L.
+
+## Problem 1 - Questions 17-21
+
+You're going to analyze the data in BirdPecks.rda and answer the questions in D2l.  Put all of your R in the chunk below:
+
+```{r}
+require(DS705data)
+data("BirdPecks")
+require(ggplot2)
+str(BirdPecks)
+
+# PART A
+# boxplots
+boxplot(pecks~group, data=BirdPecks)
+
+# histograms
+ggplot(BirdPecks, aes(x=pecks)) +
+  geom_histogram(bins=5) + 
+  facet_grid(~group)
+
+# PART B
+# shapiro wilk tests of normality
+shapiro.test(BirdPecks$pecks[BirdPecks$group==1])
+shapiro.test(BirdPecks$pecks[BirdPecks$group==2])
+
+# PART C
+wilcox.test(pecks~group, data=BirdPecks,conf.int=T,conf.level=0.9)$conf.int
+```
+
+
+---
+
+## Problem 2 - Questions 22-26
+
+Analyze StrengthSpeed.rda and put your R below:
+
+```{r}
+data("StrengthSpeed")
+str(StrengthSpeed)
+
+# calculate the difference (after - before)
+StrengthSpeed$diff <- StrengthSpeed$after-StrengthSpeed$before
+
+# PART B
+boxplot(StrengthSpeed$diff)
+hist(StrengthSpeed$diff)
+qqnorm(StrengthSpeed$diff)
+qqline(StrengthSpeed$diff)
+
+# Part C
+test <-t.test(StrengthSpeed$diff, alternative="less")
+test
+```
+
+---
+
+## Problem 3 - Questions 27-36
+
+Analyze GroupHLT scores and put your R here:
+
+```{r}
+# Part B
+samples <- data.frame(one=c(79, 76, 74, 70, 81, 85, 73, 78, 69, 72, 83, 89, 72, 79, 75),
+                      two=c(78, 96, 85, 91, 77,103, 72, 93, 98, 86, 70, 110, 70, 91, 99))
+
+hist(samples$one)
+hist(samples$two)
+boxplot(samples$one)
+boxplot(samples$two)
+shapiro.test(samples$one)
+shapiro.test(samples$two)
+
+# Part C
+t.test(samples$two, samples$one)
+
+t.test(samples$one, samples$two, conf.level = 0.95)$conf.int
+
+bootMeanPaired <- function(x,i){
+  # x is a vector of differences from paired data
+  # i is a vector of indices for the resampled elements of x
+  mean(x[i]) # the statistic that gets returned
+  }
+
+library(boot)
+boot.object <- boot(samples$two, bootMeanPaired, R = 10000)
+boot.ci(boot.object,conf=0.95,type='bca')$bca[4:5]
+```
+
+---
+
+## Problem 4 - Questions 37-41
+
+Analyze the data in treadware.rda and put your R here:
+
+```{r}
+require(plyr)
+require(psych)
+data("treadwear")
+str(treadwear)
+
+#Part A
+describeBy(treadwear$wear, treadwear$brand)
+
+boxplot(wear~brand, data=treadwear)
+
+# Part B
+ddply(treadwear, ~brand, summarise, mean=mean(wear), sd=sd(wear), shapiro.P.val=shapiro.test(wear)$p.value)
+
+bartlett.test(wear~brand, treadwear)
+
+oneway.test(wear~brand, data=treadwear, var.equal=FALSE)
+
+# Part C
+pairwise.t.test(x=treadwear$wear,g=treadwear$brand,p.adjust.method = 'bonf')
+
+```
+
+---
+
+## Problem 5 - Questions 42-59
+
+Analyze the data in diamond.rda and include your R here:
+
+```{r}
+data("diamond")
+str(diamond)
+
+# Part A
+ggplot(diamond, aes(x=carat, y=price)) +
+  geom_point()
+
+# Part B
+dia.mod <- lm(price~carat, data = diamond)
+summary(dia.mod)
+
+# Part C
+cor.test(diamond$carat, diamond$price, method = 'pearson')
+
+# Part D
+confint(dia.mod, 'carat', level=0.95)
+
+# Part E
+resids <- dia.mod$residuals
+
+hist(resids)
+shapiro.test(resids)
+plot(dia.mod$fitted.values, resids)
+qqnorm(resids)
+qqline(resids)
+
+require(lmtest)
+bptest(dia.mod)
+
+# Part F
+summary(dia.mod)$r.squared
+
+```
+
+---
+
+## Problem 6 - Questions 60- 66
+
+Analyze the data in Shells.rda and include your R here:
+
+```{r}
+data("shells")
+str(shells)
+
+# Part A
+# Use stepwise model selection with AIC as the stepping criterion and direction = "both" to identify the best first-order model for predicting shell height (Y)
+mod <- lm(Y ~ ., data = shells)
+results <- step(mod, direction="both")
+
+# Part B
+require(HH)
+vif(results)
+vif(results) > 10
+
+# Part C
+modelA <- results
+modelB <- lm(Y ~ X1 + X2 + X2*X2 + X4 + X6, data=shells)
+
+extractAIC(modelA)[2]
+extractAIC(modelB)[2]
+extractAIC(modelA)[2] < extractAIC(modelB)[2]
+
+# Part D
+summary(modelA)$adj.r.squared
+summary(modelB)$adj.r.squared
+```
+
+---
+
+## Problem 7 - Questions 67-70
+
+Analyze the "Primary News Source for Americans" data described in the problem statement.  Put your R below:
+
+```{r}
+counts <- c(38,20,15,42)
+props <- c(.45,.18,.16,.21)
+chisq.test(x=counts,p=props)
+```
+
+---
+
+## Problem 8 - Questions 71-75
+
+Analyze the data in cheese.rda and put your R below:
+
+```{r}
+data("cheese")
+str(cheese)
+
+# Part A
+mod <- glm(taste~acetic + person, data=cheese, family='binomial')
+summary(mod)
+
+# Part B
+# convert estimated coefficient of acetic to an odds ratio
+exp(mod$coefficients['acetic'])
+
+# Part C
+# Compute the predicted probability of a child finding the taste of the cheese acceptable when the value for acetic is 6
+newData <- data.frame(acetic=6, person='Child')
+predict(mod, newData, type="response")
+
+# Part D
+# Compute a 95% confidence interval for the predicted probability of a child finding the taste of the cheese acceptable when the value for acetic is 6.
+
+out <- predict(mod, newData,se.fit=TRUE)
+C = .95  # define the level of confidence
+crit = qnorm(1-(1-C)/2)  # get the appropriate critical value
+lower = exp(out$fit-crit*out$se.fit)/(1+exp(out$fit-crit*out$se.fit))
+upper = exp(out$fit+crit*out$se.fit)/(1+exp(out$fit+crit*out$se.fit))
+c(lower,upper)
+```
+
+---
+
+## Problem 9 - Questions 76-90
+
+Analyze the data in careerbarrier.rda and put your R below:
+
+```{r}
+load('T:\\OneDrive\\Academics\\Data Science\\DS705_Statistical_Methods\\Summary\\careerbarrier.rda')
+str(careerbarrier)
+require(psych)
+
+# Part A
+# Conduct Bartlett's test for sphericity on the responses for the 15 survey questions
+mtx <- cor(careerbarrier)
+cortest.bartlett(mtx,n=76)
+
+# Part B
+# Compute the Kaiser-Meyer-Olkin (KMO) Measure of Sampling Adequacy (MSA)
+results <- KMO(mtx)
+results
+# variables with MSA less than 0.5 can be dropped
+colnames(mtx)[results$MSAi < 0.5]
+
+# Part B2
+# drop 'money' and recompute KMO()
+mtx2 <- cor(careerbarrier[,-which(names(careerbarrier)=='money')])
+cortest.bartlett(mtx2,n=76)
+results2 <- KMO(mtx2)
+results2
+
+# Part C
+# create a scree plot for the questionnaire items that you deemed to be appropriate for the factor analysis from Part B
+output <- princomp(careerbarrier[,-which(names(careerbarrier)=='money')], cor=TRUE)
+plot(output,type="lines") 
+abline(h=1,lty=2)
+# how many with eigenvalues greater than 1?
+sum(output$sdev^2 > 1)
+
+# Part D
+fan <- principal(careerbarrier[,-which(names(careerbarrier)=='money')],nfactors=5,rotate="varimax")
+print(fan,cut=.5,sort=TRUE)
+```
+
+---
+
+## Problem 10 - Questions 91-98
+
+Analyze the data on seat postion vs. nausea described in the problem.  Put your R below:
+
+```{r}
+# Part A
+busData <- matrix(c(98,110,161,264,321,280), byrow=T,ncol=3)
+row.names(busData) <- c('Nausea','NoNausea')
+colnames(busData) <- c('F','M','R')
+busData
+
+chisq.test(busData)
+
+# Part B
+# Construct a 90% confidence interval (without the Yates correction) for the difference in population proportions of all bus riders in the front who report nausea and all bus riders in the rear who report nausea. (Use Diff = Front - Rear)
+
+nausea <- c(98,161)
+samplesize <- c(362,441)
+prop.test(nausea, samplesize, correct=F, conf.level = 0.9)
+
+# Part C
+# Compute the odds ratio of having nausea for those in the rear compared to those in the front of the bus.
+oddsR <- 161/441
+oddsF <- 98/362
+# odds of rear having nausea relative to front
+oddsR/oddsF
+
+```
+
+---
+
+## Question 99
+
+Make sure both this RMD and the resulting knitted Word document are uploaded to the Dropbox "Final Exam R Code."

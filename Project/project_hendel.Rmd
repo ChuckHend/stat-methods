@@ -1,0 +1,539 @@
+---
+title: "Predicting Loan Defaults with Logistic Regression"
+author: "Adam C. Hendel"
+date: "May 08, 2018"
+output: word_document
+---
+
+## Section 2: Introduction
+
+Determining whether a loan applicant will default on a loan is a very important and valuable task. Turning the wrong applicant away is lost revenue and accepting the wrong applicant brings in additional expense. Accurate loan application decision making process is a valuable competency for all companies in the lending business.
+
+This project aims to explore the relationship between 30 different variables related to 50,000 historical loan applications, and the outcome of a loan, whether it resulted in default or not. The goal is to build a binary classification model using logistic regression to predict whether a future loan applicant will default on the loan. This report will cover the process of exploring the dataset, cleaning and preparing it for modeling, feature selection, diagnostics and model tuning, tuning of the predictions in the context of the business problem and finally, a summary.
+
+## Load packages
+```{r, echo=T, results='hide', warning=FALSE, message=F}
+packages <- c('ggplot2', 'gridExtra', 'dplyr', 'caret', 'reshape2', 'caret', 'MASS', 'scales')
+lapply(packages, require, character.only = TRUE)
+options(scipen=999)
+```
+
+## Section 3: Preparing and Exploring the Data
+
+Load the data set. Details about each variable can be found [here](https://datascienceuwl.github.io/Project2018/TheData.html).
+
+```{r, echo=F, results=F}
+#dataURL <-'https://datascienceuwl.github.io/Project2018/loans50k.csv'
+#loans <- read.csv(dataURL)
+```
+```{r}
+loans <- read.csv('loans50k.csv')
+```
+
+#### Preparation of the response variable
+
+The response variable is being converted to either 'good' or 'bad'. Only loans fully paid will be considered 'good', and only loans with a status of 'charged off' or 'default' will be considered bad. Loans with categories of that these will be removed from the data set.
+
+```{r}
+# define good and bad loan strings
+bad.loans  <- c('Charged Off', 'Default')
+good.loans <- c('Fully Paid')
+# filter out rows that are neither good nor bad
+loans.filtered <- loans[loans$status %in% c(bad.loans, good.loans),]
+# convert to 'good' or 'bad' string
+loans.filtered$status <- ifelse(loans.filtered$status==good.loans, 
+                                yes = 'good',no = 'bad') %>% as.factor()
+```
+
+#### Elimination of irrelevant predictors
+
+__Loan ID, totalPaid__, and __employement__ are to be dropped from the data set. 
+__Loan ID__ is an administrative system number associated with the loan used for identification purposes and thus should not be used as a predictor of loan default. Likewise, the __totalPaid__ variable will be dropped as a predictor because it can only be determined after a loan is issued. __Employment__ is the borrowers job title, and while it may seem relevant the job title is typically an indicator of income level, which is a variable already contained in the data set. Further, to be treated as a categorical variable would massively increase the number of variables in the model (there are over 1000 unique job titles in the data set).
+
+We will keep __loanID__ and __totalPaid__ attached to the records for now, but these will be dropped before the fit process.
+
+```{r}
+deleteCols <- 'employment'
+drop.cols  <- c('loadID', 'totalPaid')
+loans.filtered <- loans.filtered[, names(loans.filtered)[!names(loans.filtered) %in% deleteCols]]
+```
+
+#### Feature Engineering
+
+Several of the *levels* in the **reason** variable contain small frequency counts, as shown in the bar plot below. To simplify the model, we consolidate these with the *__other__* *level*.
+
+As shown below on the right, we consolidated **home_improvement, major_purchase, medical, small_business, car, moving, vacation, house, renewable_energy**, and **wedding** into the *__other__* variable to simplify the model.
+
+```{r,echo=F}
+# prepare the plot on original dataset
+summ <- sort(table(loans.filtered$reason), decreasing=T)
+summ <- data.frame(summ)
+summ$col <- 'dodgerblue'
+summ$col[summ$Var1 %in% c('debt_consolidation','credit_card')] <-'grey'
+names(summ) <- c('Variable', 'Frequency', 'Col')
+p1 <- ggplot(summ, aes(Variable, Frequency, fill=Variable)) +
+  geom_bar(stat='identity') +
+  ggtitle('',subtitle = 'pre-consolidation') +
+  scale_fill_manual(values=summ$Col) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size =8),
+        plot.title = element_blank(),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.title.x = element_blank(),
+        legend.position = "none")
+
+mergeVals <- c('home_improvement', 'major_purchase', 'medical', 
+               'small_business', 'car', 'moving', 'vacation',
+               'house', 'renewable_energy', 'wedding')
+loans.filtered$reason[loans.filtered$reason %in% mergeVals] <- 'other'
+
+# prepare plot on the "consolidated ie merged" data
+summ2 <- sort(table(loans.filtered$reason), decreasing=T)
+summ2 <- summ2[summ2 > 0] %>% data.frame()
+summ2$col <- 'dodgerblue'
+summ2$col[summ2$Var1 %in% c('debt_consolidation','credit_card')] <-'grey'
+names(summ2) <- c('Variable', 'Frequency', 'Col')
+levels(summ2) <- unique(summ2$Variable)
+p2 <- ggplot(summ2, aes(Variable, Frequency, fill=Variable)) +
+  geom_bar(stat='identity') +
+  ggtitle('',subtitle = 'post-consolidation') +
+  scale_fill_manual(values=summ2$Col) +
+  theme(axis.text.x = element_text(angle=45, hjust=1, size =8),
+        plot.title = element_blank(),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.title = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank(),
+        legend.position = "none")
+# plot side by side with some shared labels
+grid.arrange(p1, p2, ncol=2, 
+             top="Counts of levels in the 'Reason' variable",
+             bottom='Level name')
+```
+
+As shown above, all the levels in the plot on the left in *blue* were consolidated to the *__other__* level also in *blue* on the right. We reduced the total levels in the *Reason* variable from `r length(unique(summ$Variable))` down to `r length(unique(summ2$Variable))`.
+
+#### Cleanup Missing Values
+
+```{r, echo=F, results=T}
+# examine which variables contain the most nas
+na_count <- sapply(loans.filtered, function(x) sum(length(which(is.na(x))))) %>% 
+  sort(decreasing = T) %>% data.frame()
+na_count <- data.frame(row.names(na_count),
+                       na_count)
+row.names(na_count) <- NULL
+names(na_count) <- c('var','NAs')
+# examine the number of rows containing na values by var
+na_count[1:5,]
+
+# count number of na values in each row
+nas <- apply(loans.filtered, 1, function(x) sum(is.na(x)))
+
+bcOverlap <- sum(is.na(loans.filtered$bcOpen) & is.na(loans.filtered$bcRatio))
+
+# number missing rows
+missingRows <- !complete.cases(loans.filtered)
+
+# table(loans.filtered$status[nas > 1])
+```
+
+Records with missing values can lead to some misleading and erroneous results in the modeling process, so we need to handle them appropriately.
+
+By examining each variable, we see that missing values occur in only three of the variables, **`r na_count$var[na_count$NAs>0]`**. By visually inspecting the data we quickly see that **bcOpen** and **bcRatio** often occur as a missing pair. We could explore options to impute these missing values, though the records with missing values contain only account for `r round(sum(missingRows)/nrow(loans.filtered),2)*100`% of the total observations in the dataset. Due to the small proportion of records with missing values, we will simply remove records with missing values in these variables.
+
+```{r, echo=F}
+loansFinal <- loans.filtered[!missingRows, ]
+```
+
+#### Train / Test Split
+
+Before we train the model, we want to randomly split the data so that we can evaluate the trained model against data that is has not yet seen. We will do this by training the model on 80% of the data and then testing that model against the remaining 20%.
+```{r, echo=F}
+set.seed(1121)
+```
+
+```{r, echo=T}
+tng.rate <- 0.8
+tot <- nrow(loansFinal)
+tng.rows <- sample(1:tot, tng.rate * tot, replace=F)
+test.rows <- setdiff(1:tot, tng.rows)
+loans.tng <- subset(loansFinal[tng.rows,])
+loans.test <- subset(loansFinal[test.rows,])
+```
+
+We are doing this train/test split for two primarily reasons. First, to get a sense for how well the model will perform on new data, as briefly mentioned above. And secondly, to avoid overfitting, which can be described as an event that happens when the model memorizes the data. When overfit, the model may appear to perform very well on data it has seen before but provides poor results on new data.
+
+## Section 4 - First Model and Diagnostics
+
+The first step is to build a model using all the variables and analyze diagnostics to determine what kind of adjustments need to be made to optimize results.
+
+```{r, echo=T}
+drop.cols  <- c('loadID', 'totalPaid')
+# now remove 'loanID' and 'totalPaid'
+loans.tng.1  <- loans.tng[, names(loans.tng)[!names(loans.tng) %in% drop.cols ]]
+loans.test.1 <- loans.test[, names(loans.test)[!names(loans.test) %in% drop.cols ]]
+# fit logistic regression model on all variables
+mod.base <- glm(status ~ ., data=loans.tng.1,family = 'binomial')
+```
+
+```{r, echo=F}
+predprob <- fitted(mod.base)
+threshhold <- 0.5 
+predLoan <- cut(predprob, breaks=c(-Inf, threshhold, Inf), 
+                labels=c("bad", "good"))
+trainTab <- table(loans.tng.1$status, predLoan) 
+#addmargins(trainTab)
+p.tng <- sum(diag(trainTab)) / sum(trainTab)  
+#print(paste('Proportion of Training Correctly Predicted = ', round(p.tng,3)))
+```
+
+```{r, echo=T}
+# make predictions using the test data set
+test <- cut(predict(mod.base, newdata = subset(loans.test.1, select=-status),
+                    type='response'), 
+            breaks=c(-Inf, threshhold, Inf), 
+            labels=c("bad", "good"))
+testTab <- table(loans.test.1$status, test) 
+addmargins(testTab)
+```
+
+```{r, echo=F}
+p.test <- sum(diag(testTab))/sum(testTab)
+base.overall <- round(sum(diag(testTab))/sum(testTab),2)*100
+base.correct.bad <- round(testTab['bad','bad']/sum(testTab['bad',]),3)*100
+base.wrong.good <- round(testTab['bad','good']/sum(testTab['good',]),3)*100
+```
+
+The first model we trained using all the variables in the training data set. Then, as ask the model to make predictions based on the test data set by giving it the new data but leaving out the "correct answers". Finally, we evaluate the predictions against the actual outcome of each loan. After evaluating the model on the test data set, results show that this base model predicts with `r round(p.test,3)*100`% overall correct.
+
+However, only `r  round(testTab['bad','bad']/sum(testTab['bad',]),2)*100`% of the 'bad' loans are being correctly predicted as 'bad'. One indicator of this behavior is the data set's bias towards records with "good" loans. After inspecting the dataset before the train/test split we see that there are `r table(loansFinal$status)['good']` "good" loans and only `r table(loansFinal$status)['bad']` "bad" loans. Our results of overall model performance are inflated. Correctly predicting the *bad* loans as **bad** will save us money, and wrongly predicting *good* loans as **bad** will cost us money in the form of lost revenue, so we will track these metrics going forward as we make improvements to the model.
+
+__Base Model Results__
+
+__Overall:__ `r base.overall`%  
+__Correct 'Bad':__ `r base.correct.bad`%  
+__Wrong 'Good' :__ `r base.wrong.good`%
+
+
+## Section 5 - Improved Model and Diagnostics
+
+As mentioned above, the model is not living up to standard. Consider the table below which provides counts of the number of records with good and bad loans:
+
+```{r}
+summary(loansFinal$status)
+```
+
+We see that the entire data set contains about 27,000 records of *good* loans but only 7,500 records of "bad" loans. As mentioned, some of the behavior can be attributed to the model focusing on the *good* records it saw in the training data. We can influence the model through *oversampling*, which will give the training data set a balanced composition of good and bad loans. We will do this by replicating records of *bad* loans when we create the training data set. This will result in a training data set with an equal amount of *good* and *bad* loans.
+
+```{r}
+numGood <- sum(loans.tng$status=='good') # number of good loan records
+numBad  <- sum(loans.tng$status=='bad')  # number of bad loans records
+add.bad <- sample_n(loans.tng[loans.tng$status=='bad',], numGood-numBad, replace=T) # additional (duplicated) bad low records
+tng.oversample <- rbind(loans.tng, add.bad) # the new training set
+summary(tng.oversample$status)
+```
+
+Now the training data set has an equal number of good and bad loans. We can now repeat the process and examine the new results.
+
+```{r, echo=F, results=F}
+tng.oversample.1 <- tng.oversample[, names(tng.oversample)[!names(tng.oversample) %in% drop.cols]]
+mod.oversamp <- glm(status ~ ., data=tng.oversample.1,family = 'binomial')
+
+test <- cut(predict(mod.oversamp, 
+                    newdata = subset(loans.test.1, select=-status),
+                    type='response'),
+            breaks=c(-Inf, threshhold, Inf), 
+            labels=c("bad", "good"),
+            type='response')
+testTab <- table(loans.test.1$status, test) 
+```
+
+```{r,echo=F, results=F}
+oversamp.overall <- round(sum(diag(testTab))/sum(testTab),2)*100
+oversamp.correct.bad <- round(testTab['bad','bad']/sum(testTab['bad',]),2)*100
+oversamp.wrong.good <- round(testTab['bad','good']/sum(testTab['good',]),2)*100
+```
+
+__Oversampling Results:__
+
+__Overall :__ `r oversamp.overall`%  
+__Correct 'Bad':__ `r oversamp.correct.bad`%  
+__Wrong 'Good' :__ `r oversamp.wrong.good`%  
+
+While the overall performance went down, we saw an improved performance in the model with regards to correctly predicting bad loans.
+
+Not all the variables in the data set are as good at helping us predict whether a loan is good or bad. We can improve the model's performance by using model automated selection procedures to choose the variables for the model. This equates to automated procedures to build iterations of models based on subsets of the variables in our data set. This gives us an idea if there are variables that are only providing noise, and not helping the model find a pattern.
+
+Before we move to variable selection it is important to inspect collinearity between the variables in the data set. By inspection of the correlation matrix heat map, we can see that collinearity is generally not an issue for the numeric predictors. However, there are several variables that are highly correlated. __Amount-payment, totalIlLim-totalRevBal, avgBal-totalBal, bcRatio-revolRatio__, and __totalBcLim-bcOpen__ all have Pearson correlation values greater than 0.8. The latter of these predictor pairs were removed prior to mitigate collinearity.
+
+```{r, echo=F}
+# collinearity
+alphas <- c('term', 'grade', 'length', 'home', 'verified', 'status', 'reason', 'state')
+
+cor_df <- loansFinal[, names(loansFinal)[!names(loansFinal) %in% drop.cols ]]
+cormat <- round(cor(cor_df[, which(!names(cor_df) %in% alphas)]),2)
+
+# Get lower triangle of the correlation matrix
+# code reference 
+# http://www.sthda.com/english/wiki/ggplot2-quick-correlation-matrix-heatmap-r-software-and-data-visualization
+get_lower_tri<-function(cormat){
+  cormat[upper.tri(cormat)] <- NA
+  return(cormat)
+}
+
+lower_cor <- get_lower_tri(cormat)
+melt_cor <- melt(lower_cor)
+
+ggplot(melt_cor, aes(x=Var1, y=Var2, fill=value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-1,1), space = "Lab", 
+                       name="Pearson\nCorrelation") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5)) + 
+  coord_fixed() +
+  ylab('') +
+  xlab('') +
+  ggtitle('Correlation Matrix')
+
+# append the variables to the exclude list
+drop.cols <- c(drop.cols, 'payment', 'totalRevBal', 'totalBal', 'revolRatio', 'bcOpen')
+# remove these variables from the training and test data sets
+tng.oversample.1 <- tng.oversample[, names(tng.oversample)[!names(tng.oversample) %in% drop.cols]]
+loans.test.1 <- loans.test.1[, names(loans.test.1)[!names(loans.test.1) %in% drop.cols]]
+# refit the oversampled model
+mod.oversamp <- glm(status ~ ., data=tng.oversample.1,family = 'binomial')
+```
+
+
+```{r, echo=F, results=F}
+fname <- 'stepAICModel.rda'
+#stepMod <- stepAIC(mod.oversamp)
+#save(stepMod, file = fname)
+load(fname)
+results <- stepMod
+```
+
+```{r, echo=F}
+test <- cut(predict(results, 
+                    newdata = subset(loans.test.1, select=-status),
+                    type='response'),
+            breaks=c(-Inf, threshhold, Inf), 
+            labels=c("bad", "good"),
+            type='response')
+testTab <- table(loans.test.1$status, test) 
+```
+
+```{r,echo=F}
+auto.overall <- round(sum(diag(testTab))/sum(testTab),2)*100
+auto.correct.bad <- round(testTab['bad','bad']/sum(testTab['bad',]),3)*100
+auto.wrong.good  <- round(testTab['bad','good']/sum(testTab['good',]),3)*100
+```
+
+```{r, echo=T, results=F}
+importance<-varImp(results) %>% data.frame()
+importance<-data.frame(rows=rownames(importance)[order(importance,decreasing = T)],
+           imp=importance[order(importance,decreasing = T),])
+```
+
+The automated model selection procedures arrive at recommended models by starting with a model based on all the variables available. Then, they increment through model combinations by removing variables and comparing the results. After comparing several automated models, we then compared simplified model approach by selecting the 14 most important variables from the best autogenerated model. Here, the importance of a variable is directly related to the absolute value of its test-statistic from the Wald-test (inspect the results from the code shown above). 
+
+The most important variables are shown below. Remember, categorical variables such as state must be encoded with dummy variables to be useful for logistic regression, which could create 50 new variables for the model. Selecting a subset of important variables can significantly decrease the complexity of the model, without sacrificing predictive performance. This method is often referred to as the Occam's Razor approach, which opts for a simple method with similar results over a more complicated method. We can now compare the results. 
+
+```{r, echo=T, results=F}
+occamVars <- c('term', 'accOpen24', 'debtIncRat', 'grade', 'home', 'bcRatio', 'rate','totalAcc', 'delinq2yr', 'length', 'amount','verified', 'totalRevLim','inq6mth')
+```
+
+
+```{r, echo=T, results=F}
+# create new tng and tst
+occam.tng <- tng.oversample.1
+occam.tst <- loans.test
+# change term to 60 months or none
+occam.tng$term  <- ifelse(occam.tng$term==' 60 months', yes='60mo','other')
+occam.tst$term <- ifelse(occam.tst$term==' 60 months', yes='60mo','other')
+
+occam.tng <- occam.tng[,c(occamVars,'status')]
+occam.tst <- occam.tst[,c(occamVars,'status','totalPaid')]
+# refit the model
+mod.occam <- glm(status ~ ., data=occam.tng, family = 'binomial')
+```
+```{r, echo=F, results=F}
+test <- cut(predict(mod.occam, 
+                    newdata = subset(occam.tst, select=-status),
+                    type='response'),
+            breaks=c(-Inf, threshhold, Inf), 
+            labels=c("bad", "good"),
+            type='response')
+testTab <- table(occam.tst$status, test)
+```
+
+```{r,echo=F, results=F}
+occam.overall <- round(sum(diag(testTab))/sum(testTab),2)*100
+occam.correct.bad <- round(testTab['bad','bad']/sum(testTab['bad',]),2)*100
+occam.wrong.good  <- round(testTab['bad','good']/sum(testTab['good',]),2)*100
+```
+
+__Occam's Results__
+
+__Overall:__ `r occam.overall`%  
+__Correct 'Bad':__ `r occam.correct.bad`%  
+__Wrong 'Good' :__ `r occam.wrong.good`%
+
+The simplified model has similar results with significantly decreased complexity. Next, we tune and optimize the model in the context of the problem.
+
+## Section 6 - Tuning the Predictions and Profit Analysis
+
+A logistic regression function builds models that output values between 0 and 1. We can tune the model by dictating the cutoff score for our predictions, that is which value we want to assign predictions to **good** or **bad**. The results of an evaluation of cutoff values between 0 and 1 at 0.05 step increments. Those increments are shown along the horizontal axis, and the vertical axis is the percentage of the metrics which are designated by color. We observe where the cutoff score is 1, the model correctly predicts all the **bad** loans as *bad*, but also predicts all the **good** loans as *bad*. Tt is simply predicting **all** loans as *bad*. Likewise, a cutoff score of 0 will predict all the loans as *good*.
+
+```{r, echo=F, results=F}
+occam.tst$profit <- occam.tst$totalPaid-occam.tst$amount
+compMetrics <- function(yhat, labels, cutoff=0.5, profit){
+  # remember, 0 is a bad loan
+  #yhat <- predict(mod.occam, newdata = subset(occam.tst, select=-status),type='response')
+  #labels=occam.tst$status
+  #profit=occam.tst$profit
+  pred <- ifelse(yhat<cutoff, "bad", "good")
+  accuracy  <- sum(pred==labels)/length(labels)
+  corr.bad  <- sum(pred=='bad'  & labels=='bad')  / sum(labels=='bad')
+  wrong.bad <- sum(pred=='bad'  & labels=='good') / sum(labels=='good')
+  corr.good <- sum(pred=='good' & labels=='good') / sum(labels=='good')
+  wrong.good<- sum(pred=='good' & labels=='bad')  / sum(labels=='bad')
+  # profit/loss analysis
+  # correctly predicting a good loan is rev (+)
+  # correctly predicting a bad loans is a negative expense (+)
+  # wrongly predicting a good loan is an expense (-)
+  # wrongly predicting a bad loan is lost revene (-)
+  rev <- -sum(profit[pred=='bad' & labels=='bad'])  + sum(profit[pred=='good' & labels=='good'])
+  exp <- sum(profit[pred=='bad' & labels=='good']) + -sum(profit[pred=='good' & labels=='bad'])
+  
+  return(data.frame(Cutoff=cutoff,
+                    Accuracy=accuracy, 
+                    Correct.Bad=corr.bad,
+                    Correct.Good=corr.good,
+                    Wrong.Bad=wrong.bad,
+                    Wrong.Good=wrong.good,
+                    Profit = rev-exp))
+}
+
+yhat <- predict(mod.occam, newdata = subset(occam.tst, select=-status),type='response')
+
+cutoffs = seq(from=0, to=1, by=0.05)
+metrics <- data.frame()
+
+for(cut in cutoffs){
+  metrics <- rbind(metrics, compMetrics(yhat, labels=occam.tst$status, cutoff=cut, occam.tst$profit))
+}
+
+# min-max the revenue to same scale as metrics (0 to 1)
+minmax <- function(x){(x-min(x))/(max(x)-min(x))}
+
+metrics$Profit.Raw <- metrics$Profit
+metrics$Profit <- minmax(metrics$Profit)
+
+d <- melt(metrics, id.vars = 'Cutoff')
+names(d) <- c('Cutoff', 'Metric','Percentage')
+
+net.metric <- d[d$Metric=='Profit',]
+max.prof.cut <- net.metric$Cutoff[net.metric$Percentage==1]
+
+ggplot(d[d$Metric!='Profit.Raw',], aes(x=Cutoff, y=Percentage, col=Metric)) +
+  geom_line(size=1.1) +
+  ylab('Percentage') +
+  xlab('Cutoff Value') +
+  scale_color_brewer(palette = 'Set3') +
+   geom_vline(xintercept = max.prof.cut, linetype=4) +
+  annotate('text', x=max.prof.cut+.11, y=0.1, label=paste('Optimal Cutoff\n',max.prof.cut))
+
+```
+
+Do note that we are most concerned about *profit*, and we can determine what profit would have been at each cutoff value had we used the model on our test data. To do this we will assume **totalPaid-amount=profit** for each prediction. We consider the dollar value of correctly predicted bad loans (i.e. likely a net loss) as a cost savings, thus the amount of the loss becomes a benefit to us. Likewise, wrongly predicting a loan good when it was in fact a bad loan becomes an actual expense. We sum these values along with the correctly predicted profit or loss for each cutoff level for all the loans.
+
+As shown above, we see that if we reject all the loans using a cutoff value of 1, **profit** will be 0. If we accept all the loans, using a cutoff value of 0, **revenue** will be higher but not optimal. To optimize for profit, we should select a cutoff score of `r max.prof.cut`. Note that the actual profit values are scaled to values between 0 and 1 to fit the scale of the other metrics.
+
+We can analyze the amount of profit at each cutoff value also compared to both the actual amount of profit we saw from in the test data set (good loans profit less bad loans loss) and the perfect predictive accuracy scenario (accept all good loans and no bad loans).
+
+```{r, echo=F, results=F}
+
+maxProf <- occam.tst$profit[occam.tst$status=='good'] %>% sum()
+actualProf <- occam.tst$profit %>% sum()
+currMod <- d$Percentage[d$Metric=='Profit.Raw'] %>% max()
+
+acc <- metrics[metrics$Cutoff==max.prof.cut,'Accuracy']
+tp <- metrics[metrics$Cutoff==max.prof.cut,'Correct.Good']
+tn <- metrics[metrics$Cutoff==max.prof.cut,'Correct.Bad']
+fp <- metrics[metrics$Cutoff==max.prof.cut,'Wrong.Good']
+fn <- metrics[metrics$Cutoff==max.prof.cut,'Wrong.Bad']
+
+gain <- currMod - actualProf
+
+ggplot(d[d$Metric=='Profit.Raw',], aes(x=Cutoff, y=Percentage)) +
+  geom_line(size=1.1) +
+  ylab('Profit (USD)') +
+  scale_y_continuous(label=comma) +
+  geom_hline(yintercept = maxProf, col='blue', size=1.1) +
+  geom_hline(yintercept = actualProf, col = 'darkgreen', size = 1.1) +
+  geom_vline(xintercept = max.prof.cut, linetype=4) +
+  geom_hline(yintercept=0) +
+  annotate('text', x=.25, y=maxProf*.5, label=paste("Model's Profit")) +  
+  annotate('text', x=max.prof.cut+.14, y=maxProf*.8, label=paste('Optimal Cutoff\n',max.prof.cut)) +
+  annotate('text', x=.1, y=maxProf*.95, label=paste("Perfect Profit")) +
+  annotate('text', x=.9, y=actualProf*1.5, label=paste('Actual Profit'))
+```
+
+We can see that if the assume the status quo (had the model made the same decisions as the humans), we would see profit of `r format(actualProf, big.mark=',')`. However, if the model rejects too many loans, revenue drops below our current process. The perfect model with 100% accuracy, that is accept no bad loans, we would be able to reach `r format(maxProf,big.mark=',')`. Again, the optimal cutoff value for the model is at `r max.prof.cut`, which would have seen profit of `r format(currMod, big.mark=',')`. This model would have increased our net profit by `r format(gain,big.mark=',')`, which would be a `r round(gain/actualProf,2)*100`% increase of current profit.
+
+## Section 7 - Results Summary
+
+The best model determined in this project is written below. Note that the encoded categorical variables are included in this list.
+
+Outcome variable: status
+
+Predictor variables: `r names(mod.occam$coefficients)`
+
+We recommend using a cutoff value of `r max.prof.cut` for the logistic regression model provided. Base on the evaluation against the test data set, this cutoff score and model is expected to provide the following predictive metrics on future data sets:
+
+__Cutoff Value:__ `r max.prof.cut`  
+
+__Overall Accuracy:__ `r acc %>% round(2)*100`%  
+Overall performance in terms of correctly predicted good and bad loans.
+
+__True Positive Rate:__ `r tp %>% round(2)*100`%  
+Percentage of the good loans that were succesfully predicted as good.
+
+__True Negative Rate:__ `r tn %>% round(2)*100`%  
+Percentage of the bad loans that were succesfully predicted as bad.
+
+__False Positive Rate:__ `r fp %>% round(2)*100`%  
+Percentage of the bad loans that were erroneously predicted as good.
+
+__False Negative Rate:__ `r fn %>% round(2)*100`%  
+Percentage of the good loans that were erroneously predicted as bad.
+
+```{r, eval=F,echo=F, results=F}
+# for executive summary
+values <- c(actualProf,currMod,maxProf)
+labels <- c('Current Process\n (no model)', 'Proposed Model', '"Perfect Model"')
+df <- data.frame(values=values,labels=labels)
+plot<-ggplot(df, aes(x=labels, y=values, fill=labels)) +
+  geom_bar(stat='identity',show.legend=F) +
+  xlab('Loan Selection Method') +
+  ylab('Net Profit\n (USD)') +
+  scale_y_continuous(label = comma, 
+                     breaks = seq(0, 15000000, by = 2500000)) +
+  scale_fill_manual(values = c('"Perfect Model"' = "grey", 
+                                'Proposed Model' = "orange", 
+                                'Current Process\n (no model)' = "blue")) +
+  scale_x_discrete(limits=labels) +
+  ggtitle(label = 'Profit Scenarios on Historical Loans',
+          subtitle = '7,000 sample loans') +
+  theme(plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5))
+#plot
+  
+```
+
+
+
+
+

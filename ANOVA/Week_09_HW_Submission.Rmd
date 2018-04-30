@@ -1,0 +1,396 @@
+
+---
+title: 'ANOVA etc.'
+author: "Adam Hendel"
+date: "04/03/2018"
+output: word_document
+fontsize: 12pt
+---
+
+Create a Word docx from this R Markdown file for the following exercise.  Submit the R markdown file and resulting Word docx file via D2L Dropbox.   
+
+## Exercise 1
+
+In the Lesson 3 presentation you saw how to use the Wilcoxon Rank Sum test to compare the difference in median repair times for Macs and PCs.  You'll find the `repair` dataset in the `DS705data` package.  In this problem we'll test the hypothesis that the population mean repair times are different for Macs and PCs at the 5% significance level using three different approaches.
+
+$$ H_0: \mu_{\mbox{PC}} = \mu_{\mbox{Mac}}$$
+$$H_a:  \mu_{\mbox{PC}} \neq \mu_{\mbox{Mac}} $$
+
+### Part 1a
+
+Even though repair times for both computer types are skewed right go ahead and use `t.test` to test if the population mean times are significantly different.  Include your R code below and write a conclusion to the test for practice.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(DS705data)
+data(repair)
+
+a.1 <- t.test(time~type, data=repair, alternative='two.sided')
+a.1
+```
+
+Do not reject $H_0$ at $\alpha = 0.05$. There is not sufficient evidence to conclude that the population mean repair times for Macs and PCs are significantly different (P=`r round(a.1$p.value,3)`).
+
+---
+
+### Part 1b
+
+Now use the `boot` package to construct a 95% BCa confidence interval for the difference in population mean repair times.  Use at least 5000 resamples.  Use that confidence interval to write a hypothesis test conclusion to this hypothesis test.  (Review: you made similar bootstrap CI's in Lesson 3.)
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(boot)
+bootMeanDiff <- function(d,i){
+  means <- tapply(d[i,1],d[,2],mean)
+  means[1]-means[2]
+}
+
+boot.object <- boot(repair, bootMeanDiff, R = 5000, strata=repair$type)
+CI <- boot.ci(boot.object, type='bca', conf=0.95)
+CI
+```
+
+We are 95% confident that the mean `r unique(repair$type)[1]` repair time is between `r round(CI$bca[4],2)` and `r round(CI$bca[5],2)` units lower than the `r unique(repair$type)[2]`.
+
+---
+
+### Part 1c
+
+Follow along with with Two Means example in the Bootstrap Hypothesis Testing presentation to bootstrap the two means t test to see if there is a significant difference in population mean repair times.  Include a histrogram of the boostrapped t-distribution and write a conclusion to the hypothesis test.  (NOTE: in the P value computation slide the last part got cut off, the full code is `P <- 2*min( sum( bootdist < toriginal), sum( bootdist > toriginal ) )/5000`.)
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+set.seed(122)
+
+# make pseudo null population
+time <- repair$time
+type <- factor(repair$type)
+timenull <- c(time[type=='Mac']-mean(time[type=='Mac']),
+           time[type=='PC']-mean(time[type=='PC']))
+
+# collect resamples
+n <- 5000
+rs <- rbind(replicate(n, sample(timenull[type=='Mac'], replace=T)),
+            replicate(n, sample(timenull[type=='PC'],  replace = T)))
+
+# compute test statistic
+bootdist <- apply(rs, 2, function(c) t.test(c~type)$statistic)
+
+# approximate P-Value
+P <- 2*min(sum(bootdist<a.1$statistic), sum(bootdist > a.1$statistic))/n
+P
+
+hist(bootdist,breaks=20,probability = T,xlab='')
+
+```
+
+Reject $H_0$ at $\alpha = 0.05$. There is sufficient evidence to conclude that the population mean repair times for Macs and PCs are significantly different (P=`r round(P,3)`).
+
+---
+
+### Part 1d
+
+The bootstrap and theoretical t-distributions give different results here.  Which do you trust?  Why?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1d -|-|-|-|-|-|-|-|-|-|-|-
+
+The boot distribution accounts for the skewness in the original data, so in this scenario we should trust that method.
+
+---
+
+## Exercise 2
+
+This exercise is based on the data and experimental design from exercises 8.42 & 8.43 in the Ott textbook.
+
+A small corporation makes insulation shields for electrical wires using three different types of machines. The corporation wants to evaluate the variation in the inside diameter dimension of the shields produced by the machines. A quality engineer at the corporation randomly selects shields produced by each of the machines and records the inside diameters of each shield (in millimeters). The goal is to determine whether the location parameters (i.e. mean or median) of the three machines differ. The data set `shields` is in the `DS705data` package.  The R code to load it is already below.
+
+### Part 2a
+
+Construct side-by-side boxplots for the inside diameters of the insulation shields for the three machines.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(DS705data)
+data(shields)
+boxplot(Diameter~Machine, data = shields,
+        main='Boxplots of inside diameter by Machine Type')
+
+```
+
+----
+
+### Part 2b
+
+Comment on what you see in the boxplots.  How do the medians compare visually?  Do the samples look like they have roughly the same variability?  Is there severe skewness or outliers in any of the samples?  Be specific.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2b -|-|-|-|-|-|-|-|-|-|-|-
+
+The median inside diameters of machines A and B appear to be close together while C's median is about twice as much.
+
+The amount of variability seems to be quite different between the three machine types. Machine C appears to be severely skewed right, though A and B also display right skewness with A being closer to "normal". Machine B appears to have the least amount of variability, with the exception of an extreme outlier. Machine C has the most variability, by visual inspection.
+
+----
+
+### Part 2c
+
+Which data conditions for ANOVA appear not to be met, if any?  Provide reasoning for your answer.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2c -|-|-|-|-|-|-|-|-|-|-|-
+
+As we saw by visual inspection in 2a and stated in 2b, the variability does not appear to be the same across the three machines.
+
+----
+
+### Part 2d  
+
+Conduct an analysis of variance test (the standard one that assumes normality and equal variance).  (i) State the null and alternative hypotheses, (ii) use R to compute the test statistic and p-value, and (iii) write a conclusion in context at $\alpha=0.05$.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2d -|-|-|-|-|-|-|-|-|-|-|-
+
+(i)
+
+$H_0:$ The population mean inside diameter dimension of the shields produced by the machines are the same.
+
+$H_a:$ The population means are different across the machines.
+
+(ii)
+```{r}
+
+d.2 <- anova(lm(Diameter~Machine, data = shields))
+d.2p <- d.2$`Pr(>F)`[1]
+d.2
+
+```
+
+(iii)
+
+Do not reject $H_0$ at $\alpha=0.05$. There is insufficient evidence to conclude that the population mean inside diameters are different amongst the three machine types (P=`r round(d.2p,2)`). 
+
+----
+
+### Part 2e
+
+Conduct an analysis of variance test with the Welch correction.  (i) State the null and alternative hypotheses, (ii) use R to compute the test statistic and p-value, and (iii) write a conclusion in context at $\alpha=0.05$.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2e -|-|-|-|-|-|-|-|-|-|-|-
+
+(i)
+
+$H_0:$ The population mean inside diameter dimension of the shields produced by the machines are the same.
+
+$H_a:$ The population means are different.
+
+(ii)
+```{r}
+e.2 <- oneway.test(Diameter~Machine,data = shields, var.equal = F)
+e.2
+```
+
+(iii)
+
+Do not reject $H_0$ at $\alpha=0.05$. There is insufficient evidence to conclude that the population mean inside diameters are different amongst the three machine types (P=`r round(e.2$p.value,2)`). 
+
+----
+
+### Part 2f
+
+Which data conditions for Welch ANOVA are not met, if any?  Provide reasoning for your answer.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2f -|-|-|-|-|-|-|-|-|-|-|-
+
+The response variables do not appear to be quite normally distributed. We see them all experience varying degrees of right skewness.
+
+----
+
+### Part 2g
+    
+Conduct a Kruskal-Wallis test.  (i) State the null and alternative hypotheses, (ii) use R to compute the test statistic and p-value, and (iii) write a conclusion in context using $\alpha=0.05$.
+    
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2g -|-|-|-|-|-|-|-|-|-|-|-
+
+(i)
+
+$H_0:$ The population median inside diameter dimension of the shields produced by the machines are the same.
+
+$H_a:$ The population medians are different.
+
+(ii)
+
+```{r}
+g.2 <- kruskal.test(Diameter~Machine, data=shields)
+g.2
+```
+
+(iii)
+
+Reject $H_0:$ at $\alpha=0.05$. There is sufficient evidence to conclude that the population median inside diameter for at least one of the three machine types is different. (P=`r round(g.2$p.value,2)`)
+
+----
+
+### Part 2h
+
+Which data conditions for the Kruskal-Wallis test are not met, if any?  Provide reasoning for your answer.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2h -|-|-|-|-|-|-|-|-|-|-|-
+
+As we saw by visually inspection in 2a and stated in 2b, the variability does not appear to be the same across the three machines.
+
+----
+
+### Part 2i
+
+Conduct a bootstrapped ANOVA test using pooled residuals and unequal variances as in the notes.  (i) State the null and alternative hypotheses, (ii) use R to compute the test statistic and p-value, and (iii) write a conclusion in context $\alpha=0.05$.  Do not use a helper function, instead mimic the code in the notes using a for loop to construct the boostrapped sampling distribution.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2i -|-|-|-|-|-|-|-|-|-|-|-
+
+(i)
+
+$H_0:$ The population mean inside diameter dimension of the shields produced by the machines are the same.
+
+$H_a:$ The population means are different.
+
+(ii)
+```{r}
+f.obs <- e.2$statistic
+
+resA <- shields$Diameter[shields$Machine=='A'] - mean(shields$Diameter[shields$Machine=='A'])
+resB <- shields$Diameter[shields$Machine=='B'] - mean(shields$Diameter[shields$Machine=='B'])
+resC <- shields$Diameter[shields$Machine=='C'] - mean(shields$Diameter[shields$Machine=='C'])
+pop.null <- data.frame(res=c(resA,resB,resC), shields$Machine)
+with(pop.null, tapply( res, shields$Machine, mean) )
+```
+
+```{r}
+# pooled residuals
+B <- 10000
+Fstar1 <- numeric(B)
+
+for (i in 1:B){
+  pop.null <- data.frame( 
+    res = sample( c(resA, resB, resC), replace = T), shields$Machine )
+  Fstar1[i] <- oneway.test( res~shields$Machine, data=pop.null, 
+                            var.equal=FALSE)$statistic
+}
+Fstar1[is.na(Fstar1)] <- 100*f.obs
+p.approx1 <- sum( Fstar1 > f.obs )/B
+p.approx1
+
+
+```
+
+(iii)
+
+Do not reject $H_0$ at $\alpha=0.05$. There is insufficient evidence to conclude that the population mean inside diameters are different amongst the three machine types (P=`r round(p.approx1,2)`). 
+
+----
+
+### Part 2j 
+
+Repeat the bootstrapped ANOVA test using unpooled residuals and unequal variances as in the notes.  (i) State the null and alternative hypotheses, (ii) use R to compute the test statistic and p-value, and (iii) write a conclusion in context $\alpha=0.05$.  Go ahead and use the helper function or t1waybt do do this problem.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2j -|-|-|-|-|-|-|-|-|-|-|-
+
+(i)
+
+$H_0:$ The population mean inside diameter dimension of the shields produced by the machines are the same.
+
+$H_a:$ The population means are different.
+
+(ii)
+```{r}
+# unpooled residuals
+B <- 10000
+Fstar2 <- numeric(B)
+
+for (i in 1:B){
+  pop.null <- data.frame( 
+    res = c( sample( resA, replace = T ), 
+             sample( resB, replace = T ), 
+             sample( resC, replace = T ) ), shields$Machine )
+  Fstar2[i] <- oneway.test( res~shields$Machine, data=pop.null, 
+                            var.equal=FALSE)$statistic
+}
+Fstar2[is.na(Fstar2)] <- 100*f.obs
+p.approx2 <- sum( Fstar2 > f.obs )/B
+p.approx2
+```
+
+(iii)
+
+Do not reject $H_0$ at $\alpha=0.05$. There is insufficient evidence to conclude that the population mean inside diameters are different amongst the three machine types (P=`r round(p.approx2,2)`). 
+
+----
+
+### Part 2k
+
+Which seems better and why, the bootstrap procedure with the pooled or unpooled residuals?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2k -|-|-|-|-|-|-|-|-|-|-|-
+
+Pooled appears to be closer in line with the procedures outlined in parts 2a - 2h. That is its P-Value is closer to that provided by the other methods. We know that there is an extreme outlier in the sample from machine B, and the unpooled method will magnify the effects of it.
+
+----
+
+### Part 2l
+
+Do any of the four statistical inference procedures used here provide a clear answer to the question of whether or not the three machines produce the same average inside diameter for the insulation shields?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2l -|-|-|-|-|-|-|-|-|-|-|-
+
+None of the tests provide a clear answer whether the three machines produce the same average inside diameter. There are issues with the data cause the failure of meeting the requirments of the tests. Additionally, larger samples are reasonable in this scenario.
+
+----
+
+### Part 2m 
+
+If you were responsible for conducting the statistical analysis here, what would you report to the engineer?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2m -|-|-|-|-|-|-|-|-|-|-|-
+
+Since we are evaluating the variation of each of these machines, it is possible that we are trying to help the engineer make a determiniation if one of the machines is operating outside of the machine manufacturer's specifications and needs to be recalibrated. Of course, we don't have this information, so I would make certain to clarify the problem we are trying to solve or question we are being asked to answer.
+
+Secondly, I would ask the engineer to collect more data and inquire to the method used to measure the diameters (there is no error or uncertainty reported with the measurements provided). This is a very small sample for an experiment where there are likely a large number available in the population. It also seems reasonable to ask the engineer to collect a larger sample for us.
+
+Depending on the use case for this analysis, I would explain the value of a larger sample to the engineer and explain that current results are not reliable.
+
+----
+
+### Part 2n 
+
+What impact do you think samples of sizes 5, 5, and 10 play here?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2n -|-|-|-|-|-|-|-|-|-|-|-
+
+These are extremely small samples, especially in this particular manufacturing domain. These shields are likely produced in mass, (in the thousands or millions) so a sample in the 50-100 range would be completely reasonable to obtain and measure.
+
+----
+
+### Part 2o
+
+Often the Kruskall Wallis test is presented as a test of 
+
+$H_0:$ the population distributions are all the same
+
+$H_1:$ the population distributions are not all the same,
+
+but this is not what KW tests as this example shows.  Take 3 random samples of size 100 from normal distributions having mean 0 and standard deviations 1, 10, and 50.  If KW were testing the hypotheses above, then we should reject $H_0$ since these three distributions are clearly different.  Run the KW test.  You should get a large $P$-value.  Why did you get a large $P$-value when the distributions are so different?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2o -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r echo = TRUE}
+set.seed(321)
+n <- 1000
+x <- c( rnorm(n,0,1), rnorm(n,0,10), rnorm(n,0,50))
+groups <- factor( (rep( c('A','B','C'), each=n ) ) )
+
+kruskal.test(x ~ groups)
+boxplot(x~groups)
+```
+
+Kruskal-Wallis performs the rank sum test that the location parameters of the distribution of x are the same in each group. While the distributions could be different, we can clearly see above that the median are similar across the three groups. We also know from the code we used to generate the samples that the means are the same. Kruskal-Wallis is not the best tool available to evaluate the hypothesis given. We could argue these the three distributions do have the same shape, but their scales are not the same. B is streteched relative to A by a multiple of 10, and C relative to A by a multiple of 50.
+
+----

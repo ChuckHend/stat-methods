@@ -1,0 +1,362 @@
+
+---
+title: 'Regression Model Selection'
+author: "Adam Hendel"
+date: "03/20/2018"
+output: word_document
+fontsize: 12pt
+---
+
+Knit a Word file from this R Markdown file for the following exercises.  Submit the R markdown file and resulting Word file via D2L Dropbox.   
+
+Be advised, this homework will produce copious amounts of output.
+
+## Exercise 1
+
+Ninety members (ages 18.1 to 23.4 years) of three Division I women’s intercollegiate rowing teams (National Collegiate Athletic Association) within the Big Ten Conference volunteered to participate in a study to predict race time for female collegiate rowers from nineteen physical characteristics.
+
+Data is in the file rowtime.rda in the DS705data package.  The race times are in the variable named "racetime".
+
+### Part 1a
+
+Load the data and use summary(rowtime) to see a numerical summary of the values of each.  
+
+(i) What type of variable is the response variable racetime (categorical or quantitative)?  
+
+(ii) Does this indicate linear regression or logistic regression?
+
+(iii) What types of variables are there in the pool of potential predictors? Categorical, quantitative, or a mixture of each?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(DS705data)
+data(rowtime)
+summary(rowtime)
+
+```
+
+1.i) The response variable, racetime, is a quantitative variable. According to the data documentation, it is the 2k rowing ergometer time, recorded in seconds.
+
+1.ii) Since it is a quantitative variable, it is likely a linear regression problem. However, it depends which question we want to answer. For example, we could transform the variable to categorical, that is whether or not the racetime was above or below a certain threshold, and use a logistic regression to predict the binary outcome.
+
+1.iii) There is a mixture of both categorical and quantitative variables as potential predictors. Most of the variables are quantitative, though it appears that collegiate experience (exp_var) amd pre-collegiate experience (pre_exp) could potentially be categorical. The documentation states that the units measured are years, though the data only contains the values 0 or 1 for all observations. This could be an error in the documentation, or simply that all athletes had only 0 or 1 years of collegiate experience, or pre-collegiate experience.
+
+### Part 1b
+
+Use the **regsubsets** function to find the "best" first-order model for predicting the response variable racetime with up to 8 of the 19 predictor variables in the data set.  Produce the summary and the plot for the best single models with up to 8 predictors according to $R^2_{adj}$.
+
+Which independent variables are in the best first-order model with 8 predictors when the $R^2_{adj}$ is the criterion for selection?
+
+What is the $R^2_{adj}$ for the best first-order model?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(leaps, quietly = T) # for regsubsets()
+allmods <- regsubsets(racetime~., nvmax=8, data=rowtime)
+results.1b <- summary(allmods)
+plot(allmods, scale="adjr2")
+```
+
+The variables in the "best" first order model based on $R^2_{adj}$ are `r colnames(results.1b$which)[as.vector(results.1b$which[8,])][2:9]`.
+
+The $R^2_{adj}$ for this first-order model is `r round(max(results.1b$adjr2),2)`
+
+### Part 1c
+
+Use the **step** function with backward selection to find the "best" first-order model for predicting the response variable racetime.  Recall that the formula structure y~. will produce the model using y as the response variable and all other variables in the data set as the predictors; in this set "racetime" is the response (not y) and all other variables are potential predictors.v
+
+Which independent variables are in this model?  What is the AIC value for this model? 
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+fullmod <- lm(racetime~.,data = rowtime)
+results.1c <- step(fullmod,direction="backward")
+```
+
+The "best" model contains the indepdendent variables `r names(results.1c$coefficients)[2:length(results.1c$coefficients)]`.
+
+The AIC for this model is `r round(min(results.1c$anova$AIC),2)`.
+  
+### Part 1d
+
+Use the **step** function with forward selection to find the "best" model for predicting the response variable racetime.   Recall that the formula structure y~1 will produce the model using y as the response variable and no variables in the data set as the predictors, only an intercept.
+
+Which independent variables are in the model selected?  What is the AIC value for this model? 
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1d -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+nullmod <- lm(racetime~1,data = rowtime)
+results.1d <- step(nullmod,scope=list(lower=nullmod,upper=fullmod),direction="forward")
+
+```
+
+The "best" model contains independent the indepdendent variables `r names(results.1d$coefficients)[2:length(results.1d$coefficients)]`.
+
+The AIC for this model is `r round(min(results.1d$anova$AIC),2)`.
+
+### Part 1e
+
+Use extractAIC to compute the AIC for the the best first order-model with 8 predictors from the **regsubsets** function.  How does it compare with the AIC for the two models produced by the backward and forward selection procedure?
+
+So far, which first-order model is the "best" according to the AIC?  (remember, smaller is better for AIC)
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1e -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# get the list of independent variables from the regsubsets frunction, in part 1b
+vars <- colnames(results.1b$which)[as.vector(results.1b$which[8,])][2:9]
+# build a formula object with these variables
+myForm <- reformulate(vars, response="racetime")
+# use this formula in the new model
+regsubMod <- lm(myForm, data = rowtime)
+# get the AIC
+extractAIC(regsubMod)
+```
+
+The AIC from the **regsubsets** function is `r round(extractAIC(regsubMod)[2],2)`, which is between the AICs from the backward (`r round(min(results.1c$anova$AIC),2)`) and forward (`r round(min(results.1d$anova$AIC),2)`) selection procedures. 
+
+So far the "best" first-order model, based on AIC, is the "backward" model.
+
+### Part 1f
+
+Find the VIF for each independent variable in the model produced by the forward step wise procedure.  Is there a serious problem with collinearity?  Explain.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1f -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(HH, quietly = T)
+
+vif(results.1d)
+
+```
+
+There are `r sum(vif(results.1d) > 10)` coefficients with a VIF over 10, so there does not appear to be any issues with collinearity.
+
+### Part 1g
+
+What about the possibility of adding quadratic terms to the model?  In this case, we have a fairly manageable number of quantitative predictors to check for quadratic relationship between the response variable racetime and any predictors.
+
+The R function pairs() can be used to look for quadratic relationships, but it will have to be restricted to about 4 predictors at a time so that the scatterplot matrices will be legible.
+
+Since the response variable is in column 1 and the quantitative predictors are in columns 2 through 18, running the R code in the chunk shown below.
+
+In each plot scatterplot matrix that is produced, look for any quadratic relationships between racetime and any of the predictor by examining the plots in the first row.  Is there any obvious curvature in the trend for racetime with any of the predictors?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1g -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+# The code in this chunk is provided for students
+library(DS705data)
+data("rowtime")
+pairs(rowtime[c(1,2,3,4)])
+pairs(rowtime[c(1,5,6,7)])
+pairs(rowtime[c(1,8,9,10)])
+pairs(rowtime[c(1,11,12,13,14)])
+pairs(rowtime[c(1,15,16,17,18)])
+```
+
+There does not appear to be curvature with any of the predictors and racetime.
+
+### Part 1h
+
+Something new will be covered in this part.  All possible interactions can be examined using the step() function.  This can be done using code like
+
+step(initial_model, scope = . ~ .^2, direction = 'forward')
+
+where initial_model is the output object from lm().  Using the output object for a first-order model would be a good initial model.
+
+Higher order interactions can also be explored by replacing the 2 with the highest level of interaction desired, but we won't go there in this assignment.
+
+Fit the model from the forward step done previously
+
+racetime~estffm + expvarsity + tall + preexper + biceps + meso + calfcir + bestvj
+
+and use step() to look for the best model containing up to any two-way interaction terms.  Report the model and the corresponding AIC for it.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1h -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+results.1h <- step(results.1d, scope = . ~ .^2, direction = 'forward')
+
+```
+
+
+The "best"" model containing up to any two-way interaction terms is **racetime ~ `r names(results.1h$coefficients)[2:length(results.1h$coefficients)]`**.
+
+The AIC for this model is `r round(extractAIC(results.1h)[2], 2)`.
+
+### Part 1i
+
+Obtain the model summary for the model that resulted in Part 1h. Are there any predictors with coefficients that do not have coefficients that differ from 0 at the 5% level? 
+
+If so, drop those predictors from the model if they are not involved in any interactions and re-fit it without them.  Compute both the $R^2_{adj}$ and the AIC for that model.  
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1i -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+summary(results.1h)
+
+# copy results
+results.1i <- results.1h
+
+```
+
+The estffm predictor is part of the interaction term bestvj:estffm, though it's individual P-value is 0.196266. We will not drop it or any other predictors from the model.
+
+### Part 1j 
+
+Let us refer to this final model as **Model F**.  It should include the following terms:
+
+racetime ~  estffm + expvarsity + tall + preexper + biceps + meso + calfcir + bestvj + tall:calfcir + estffm:bestvj
+
+If this will be our possible final model, it is necessary to evaluate the model assumptions.  
+    
+Are the residuals of **Model F** normal?  Construct a histogram, normal probability plot, and boxplot of the residuals and perform a Shapiro-Wilk test for normality at a 5% level of significance. Justify your answer.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1j -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+model.F <- results.1i
+resids <- model.F$residuals
+# histogram
+par(mfrow=c(1,3)); hist(resids);qqnorm(resids); qqline(resids, col='red');boxplot(resids)
+# shapiro-wilk
+shapiro.test(resids)
+```
+
+
+The histogram, normal probability and box plots all indicate normally distributed residuals. There is a single outlier, as indicated by the boxplot. We might be more concerned if there were a larger quantity of outliers.
+
+Additionally, based on the Shapiro-Wilk test at at $\alpha = 0.05$, there is not evidence to say that the residuals are not normally distributed (P=0.9681).
+
+### Part 1k
+
+Construct a residual plot for **Model F**. Do you see any patterns indicating potential violations of model assumptions?  Explain.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1k -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+plot(model.F)
+```
+
+
+The "best" model does appear to be a good fit The residuals have generally the same variance across all fitted values.
+
+
+### Part 1l
+
+Perform the Bruesch-Pagan test for equal variances of the residuals at a 5% level of significance.  What does you conclude from this test?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1l -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(lmtest, quietly = T)
+bptest(model.F)
+
+```
+
+At $\alpha = 0.05$, there is not sufficient evidence to conclude that the variances are unequal (P=0.4475).
+
+### Part 1m
+
+How do you feel about this last model being the "best"?
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 1m -|-|-|-|-|-|-|-|-|-|-|-
+
+This last model is the "best", where our definition is stricly limited to the metrics we outlined in this exercise (mostly AIC). However, to go beyond "best", we would want to know the context of the application of this model. For example, a coach might be more interested in knowing how close the model predictions are going to be to actuals. For this example, we should consider cross cross-validation with a hold-out data set, and use a metric like mean-absolute-percentage-error to communicate the "best" model to the stake holders.
+
+
+## Exercise 2
+
+In a study of small, constructed agricultural ponds in southeastern Minnesota, pond and the surrounding landscape features were used to assess their value as amphibian breeding sites. One measure of this was when the amphibian species richness was at least four.  
+
+The data frame is farmpond.rda in the DS705data package.
+
+Species richness is the number of different species observed at each pond and the variable RICH is defined as:
+
+RICH = 1 if species richness is at least 4; RICH = 0 otherwise.
+
+Furthermore,
+
+FISH = 1 if fish are present; FISH = 0 otherwise
+
+and the remaining variables are quantitative. 
+
+### Part 2a
+
+Suppose our goal is to build the "best" logistic regression model to predict species richness of at least 4 (i.e. RICH=1).  Fit the first order logistic regression model using all of the available predictors in the file.
+
+Also fit the null model (intercept only) and use step() with forward selection to search for the best first-order logistic regression model with these variables.  Identify the resulting model.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2a -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+data("farmpond")
+# first order model
+mod.2a <- glm(RICH ~ ., data=farmpond)
+
+# step null model
+null.2a <- glm(RICH ~ 1, data=farmpond)
+
+
+mod.2a.step <- step(null.2a,scope=list(lower=null.2a,upper=mod.2a),direction="forward")
+
+```
+
+### Part 2b
+
+Construct a classification table (also known as a confusion matrix) for the model identified in the previous part.  Use 0.5 as the cutoff probability.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2b -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+predprob <- fitted(mod.2a.step)
+
+threshhold <- 0.5 
+
+predRICH <- cut(predprob, breaks=c(-Inf, threshhold, Inf), 
+                labels=c("Sp Rich<4", "Sp Rich>=4"))
+
+cTab <- table(farmpond$RICH, predRICH) 
+addmargins(cTab)
+
+p <- sum(diag(cTab)) / sum(cTab)  
+print(paste('Proportion correctly predicted = ', p)) 
+
+
+```
+
+
+### Part 2c
+
+Compute McFadden's pseudo $R^2$ for the model identified in part 2a.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2c -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(pscl, quietly = T)
+r2 <- pR2(mod.2a.step)
+r2[4]
+```
+
+
+### Part 2d
+
+Conduct a Hosmer-Lemeshow test of goodness-of-fit for the model from part 2a.  Use 5 groups and use a 5% level of significance.
+
+### -|-|-|-|-|-|-|-|-|-|-|- Answer 2d -|-|-|-|-|-|-|-|-|-|-|-
+
+```{r}
+require(ResourceSelection, quietly = T)
+hoslem.test(farmpond$RICH, fitted(mod.2a.step), g=5)
+```
+
+At $\alpha = 0.05$ there is not sufficient evidence to claim that the model does not fit (P= 0.3166).
+
+
+
+
